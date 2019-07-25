@@ -12,16 +12,14 @@ adapters.forEach(function (adapters) {
 
     var dbs = {};
 
-    beforeEach(function (done) {
+    beforeEach(function () {
       dbs.name = testUtils.adapterUrl(adapters[0], 'testdb');
       dbs.remote = testUtils.adapterUrl(adapters[1], 'test_repl_remote');
-      testUtils.cleanup([dbs.name, dbs.remote], done);
     });
 
-    after(function (done) {
+    afterEach(function (done) {
       testUtils.cleanup([dbs.name, dbs.remote], done);
     });
-
 
     it('Testing issue #221', function () {
       var doc = {_id: '0', integer: 0};
@@ -52,9 +50,6 @@ adapters.forEach(function (adapters) {
     });
 
     it('Testing issue #221 again', function () {
-      if (testUtils.isCouchMaster()) {
-        return;
-      }
       var doc = {_id: '0', integer: 0};
       var local = new PouchDB(dbs.name);
       var remote = new PouchDB(dbs.remote);

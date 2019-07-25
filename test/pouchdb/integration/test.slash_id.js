@@ -13,15 +13,13 @@ adapters.forEach(function (adapter) {
 
     var dbs = {};
 
-    beforeEach(function (done) {
+    beforeEach(function () {
       dbs.name = testUtils.adapterUrl(adapter, 'testdb');
-      testUtils.cleanup([dbs.name], done);
     });
 
-    after(function (done) {
+    afterEach(function (done) {
       testUtils.cleanup([dbs.name], done);
     });
-
 
     it('Insert a doc, putAttachment and allDocs', function (done) {
       var db = new PouchDB(dbs.name);
@@ -78,7 +76,7 @@ adapters.forEach(function (adapter) {
           }
           res.rows[1].doc._attachments.should.include
             .keys('attachment/with/slash');
-          db.changes().on('complete', function (res) {
+          db.changes({return_docs: true}).on('complete', function (res) {
             res.results.sort(function (a, b) {
               return a.id.localeCompare(b.id);
             });

@@ -126,6 +126,8 @@ adapters.forEach(function (adapter) {
         });
       }).then(function (result) {
         result.rows.map(keyFunc).should.deep.equal(keys);
+        result.rows[keys.indexOf('2')].value.deleted.should.equal(true, 'deleted doc with keys option');
+        (result.rows[keys.indexOf('2')].doc === null).should.equal(true, 'deleted doc with keys option');
       });
     });
 
@@ -143,10 +145,32 @@ adapters.forEach(function (adapter) {
       });
     });
 
+    it('Testing allDocs opts.keys with limit', function () {
+      var db = new PouchDB(dbs.name);
+      return db.bulkDocs(origDocs).then(function () {
+        return db.allDocs({
+          keys: ['3', '1'],
+          limit: 1
+        });
+      }).then(function (res) {
+        res.total_rows.should.equal(4);
+        res.rows.should.have.length(1);
+        res.rows[0].id.should.equal('3');
+        return db.allDocs({
+          keys: ['0', '2'],
+          limit: 3
+        });
+      }).then(function (res) {
+        res.rows.should.have.length(2);
+        res.rows[0].id.should.equal('0');
+        res.rows[1].id.should.equal('2');
+      });
+    });
+
     it('Testing allDocs invalid opts.keys', function () {
       var db = new PouchDB(dbs.name);
       return db.allDocs({keys: 1234}).then(function () {
-        throw 'should not be here';
+        throw new Error('should not be here');
       }).catch(function (err) {
         should.exist(err);
       });
@@ -165,6 +189,7 @@ adapters.forEach(function (adapter) {
               should.exist(deleted.ok);
 
               db.changes({
+                return_docs: true,
                 since: update_seq
               }).on('complete', function (changes) {
                 var deleted_ids = changes.results.map(function (c) {
@@ -192,6 +217,7 @@ adapters.forEach(function (adapter) {
             doc.updated = 'totally';
             db.put(doc, function () {
               db.changes({
+                return_docs: true,
                 since: update_seq
               }).on('complete', function (changes) {
                 var ids = changes.results.map(function (c) { return c.id; });
@@ -242,6 +268,7 @@ adapters.forEach(function (adapter) {
             db.get('3', function (err, winRev) {
               winRev._rev.should.equal(conflictDoc2._rev);
               db.changes({
+                return_docs: true,
                 include_docs: true,
                 conflicts: true,
                 style: 'all_docs'
@@ -603,6 +630,54 @@ adapters.forEach(function (adapter) {
       });
     });
 
+    it('test descending with startkey/endkey', function () {
+      var db = new PouchDB(dbs.name);
+      return db.bulkDocs([
+        {_id: 'a'},
+        {_id: 'b'},
+        {_id: 'c'},
+        {_id: 'd'},
+        {_id: 'e'}
+      ]).then(function () {
+        return db.allDocs({
+          descending: true,
+          startkey: 'd',
+          endkey: 'b'
+        });
+      }).then(function (res) {
+        var ids = res.rows.map(function (x) { return x.id; });
+        ids.should.deep.equal(['d', 'c', 'b']);
+        return db.allDocs({
+          descending: true,
+          startkey: 'd',
+          endkey: 'b',
+          inclusive_end: false
+        });
+      }).then(function (res) {
+        var ids = res.rows.map(function (x) { return x.id; });
+        ids.should.deep.equal(['d', 'c']);
+        return db.allDocs({
+          descending: true,
+          startkey: 'd',
+          endkey: 'a',
+          skip: 1,
+          limit: 2
+        });
+      }).then(function (res) {
+        var ids = res.rows.map(function (x) { return x.id; });
+        ids.should.deep.equal(['c', 'b']);
+        return db.allDocs({
+          descending: true,
+          startkey: 'd',
+          endkey: 'a',
+          skip: 1
+        });
+      }).then(function (res) {
+        var ids = res.rows.map(function (x) { return x.id; });
+        ids.should.deep.equal(['c', 'b', 'a']);
+      });
+    });
+
     it('#3082 test wrong num results returned', function () {
       var db = new PouchDB(dbs.name);
       var docs = [];
@@ -654,43 +729,112 @@ adapters.forEach(function (adapter) {
       });
     });
 
-    it('test empty db', function (done) {
+    it('test empty db', function () {
       var db = new PouchDB(dbs.name);
       return db.allDocs().then(function (res) {
         res.rows.should.have.length(0);
         res.total_rows.should.equal(0);
-        done();
       });
     });
 
-    it('test after db close', function (done) {
+    it('test after db close', function () {
       var db = new PouchDB(dbs.name);
       return db.close().then(function () {
         return db.allDocs().catch(function (err) {
           err.message.should.equal('database is closed');
-          done();
         });
       });
     });
 
     if (adapter === 'local') { // chrome doesn't like \u0000 in URLs
-      it('test unicode ids and revs', function (done) {
+      it('test unicode ids and revs', function () {
         var db = new PouchDB(dbs.name);
         var id = 'baz\u0000';
         var rev;
         return db.put({_id: id}).then(function (res) {
           rev = res.rev;
         }).then(function () {
-            return db.get(id);
-          }).then(function (doc) {
-            doc._id.should.equal(id);
-            doc._rev.should.equal(rev);
-            return db.allDocs({keys: [id]});
-          }).then(function (res) {
-            res.rows.should.have.length(1);
-            res.rows[0].value.rev.should.equal(rev);
-          }).then(done, done);
+          return db.get(id);
+        }).then(function (doc) {
+          doc._id.should.equal(id);
+          doc._rev.should.equal(rev);
+          return db.allDocs({keys: [id]});
+        }).then(function (res) {
+          res.rows.should.have.length(1);
+          res.rows[0].value.rev.should.equal(rev);
+        });
       });
     }
+
+    it('5793 _conflicts should not exist if no conflicts', function () {
+      var db = new PouchDB(dbs.name);
+      return db.put({
+        _id: '0', a: 1
+      }).then(function () {
+        return db.allDocs({
+          include_docs: true,
+          conflicts: true
+        });
+      }).then(function (result) {
+        should.not.exist(result.rows[0].doc._conflicts);
+      });
+    });
+    
+    it('#6230 Test allDocs opts update_seq: false', function () {
+      var db = new PouchDB(dbs.name);
+      return db.bulkDocs(origDocs).then(function () {
+        return db.allDocs({
+          update_seq: false
+        });
+      }).then(function (result) {
+        result.rows.should.have.length(4);
+        should.not.exist(result.update_seq);
+      });
+    });
+    
+    
+    it('#6230 Test allDocs opts update_seq: true', function () {
+
+      var db = new PouchDB(dbs.name);
+
+      return db.bulkDocs(origDocs).then(function () {
+        return db.allDocs({
+          update_seq: true
+        });
+      }).then(function (result) {
+        result.rows.should.have.length(4);
+        should.exist(result.update_seq);
+        result.update_seq.should.satisfy(function (update_seq) {
+          if (typeof update_seq === 'number' || typeof update_seq === 'string') {
+            return true;
+          } else {
+            return false;
+          }
+        });
+        var normSeq = normalizeSeq(result.update_seq);
+        normSeq.should.be.a('number');
+      });
+
+      function normalizeSeq(seq) {
+        try {
+          if (typeof seq === 'string' && seq.indexOf('-') > 0) {
+            return parseInt(seq.substring(0, seq.indexOf('-')));
+          }
+          return seq;
+        } catch (err) {
+          return seq;
+        }
+      }
+    });
+
+    it('#6230 Test allDocs opts with update_seq missing', function () {
+      var db = new PouchDB(dbs.name);
+      return db.bulkDocs(origDocs).then(function () {
+        return db.allDocs();
+      }).then(function (result) {
+        result.rows.should.have.length(4);
+        should.not.exist(result.update_seq);
+      });
+    });
   });
 });

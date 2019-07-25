@@ -18,16 +18,14 @@ adapters.forEach(function (adapters) {
 
     var dbs = {};
 
-    beforeEach(function (done) {
+    beforeEach(function () {
       dbs.name = testUtils.adapterUrl(adapters[0], 'testdb');
       dbs.remote = testUtils.adapterUrl(adapters[1], 'test_repl_remote');
-      testUtils.cleanup([dbs.name, dbs.remote], done);
     });
 
-    after(function (done) {
+    afterEach(function (done) {
       testUtils.cleanup([dbs.name, dbs.remote], done);
     });
-
 
     it('#4251 Should fire paused and active on sync', function (done) {
 
@@ -68,5 +66,42 @@ adapters.forEach(function (adapters) {
 
     });
 
+    it('#5710 Test pending property support', function (done) {
+
+      var db = new PouchDB(dbs.name);
+      var remote = new PouchDB(dbs.remote);
+      var docId = 0;
+      var numDocs = 10;
+
+      function generateDocs(n) {
+        return Array.apply(null, new Array(n)).map(function () {
+          docId += 1;
+          return {
+            _id: docId.toString(),
+            foo: Math.random().toString()
+          };
+        });
+      }
+      remote.bulkDocs(generateDocs(numDocs)).then(function () {
+        var repl = db.sync(remote, { retry: true, live: false, batch_size: 4 });
+        var pendingSum = 0;
+
+        repl.on('change', function (info) {
+          if (typeof info.change.pending === 'number') {
+            pendingSum += info.change.pending;
+            if (info.change.pending === 0) {
+              pendingSum += info.change.docs.length;
+            }
+          }
+        });
+
+        repl.on('complete', function () {
+          if (pendingSum > 0) {
+            pendingSum.should.equal(numDocs);
+          }
+          done();
+        });
+      });
+    });
   });
 });

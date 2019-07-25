@@ -73,7 +73,7 @@ adapters.forEach(function (adapter) {
       });
     });
 
-    it('[4595] should reject xhr errors', function (done){
+    it('[4595] should reject xhr errors', function (done) {
       var invalidUrl = 'http:///';
       new PouchDB(dbs.name).replicate.to(invalidUrl, {}).catch(function () {
         done();
@@ -81,7 +81,7 @@ adapters.forEach(function (adapter) {
 
     });
 
-    it('[4595] should emit error event on xhr error', function (done){
+    it('[4595] should emit error event on xhr error', function (done) {
       var invalidUrl = 'http:///';
       new PouchDB(dbs.name).replicate.to(invalidUrl,{})
         .on('error', function () { done(); });
@@ -98,7 +98,7 @@ adapters.forEach(function (adapter) {
     it('Get invalid id', function () {
       var db = new PouchDB(dbs.name);
       return db.get(1234).then(function () {
-        throw 'show not be here';
+        throw new Error('should not be here');
       }).catch(function (err) {
         should.exist(err);
       });
@@ -132,6 +132,32 @@ adapters.forEach(function (adapter) {
           done();
         });
       });
+    });
+
+    it('Modifying a doc that has rewritten content', function (done) {
+      var db = new PouchDB(dbs.name);
+      // To index all these below, indexeddb needs to rewrite this data, as:
+      //  - true, false and null are not indexable values
+      //  - keypaths need to consist only of keys that could also be JS var names
+      //
+      // This test makes sure we don't refer to these rewritten values when updating
+      var doc = {
+        _id: 'foo',
+        'something.that': null,
+        'needs-to-be': false,
+        'rewritten!': true
+      };
+
+      db.put(doc).then(function (info) {
+        doc._rev = info.rev;
+        doc.foo = 'bar';
+        return db.put(doc);
+      }).then(function (info) {
+        doc._rev = info.rev;
+        return db.get('foo');
+      }).then(function (dbDoc) {
+        dbDoc.should.deep.equal(doc);
+      }).catch(done).then(done);
     });
 
     it('Modify a doc with a promise', function (done) {
@@ -285,6 +311,9 @@ adapters.forEach(function (adapter) {
     });
 
     it('Remove doc twice with specified id', function () {
+      if (testUtils.isIE()) {
+        return Promise.resolve();
+      }
       var db = new PouchDB(dbs.name);
       return db.put({_id: 'specifiedId', test: 'somestuff'}).then(function () {
         return db.get('specifiedId');
@@ -484,7 +513,6 @@ adapters.forEach(function (adapter) {
       var db = new PouchDB(dbs.name);
       db.bulkDocs({ docs: bad_docs }, function (err) {
         err.name.should.equal('doc_validation');
-        err.status.should.equal(testUtils.errors.DOC_VALIDATION.status);
         err.message.should.equal(testUtils.errors.DOC_VALIDATION.message +
                                  ': _zing',
                                  'correct error message returned');
@@ -781,14 +809,6 @@ adapters.forEach(function (adapter) {
       });
     });
 
-    it('db.info should give correct name', function (done) {
-      var db = new PouchDB(dbs.name);
-      db.info().then(function (info) {
-        info.db_name.should.equal('testdb');
-        done();
-      });
-    });
-
     it('db.info should give auto_compaction = false (#2744)', function () {
       var db = new PouchDB(dbs.name, { auto_compaction: false});
       return db.info().then(function (info) {
@@ -800,14 +820,14 @@ adapters.forEach(function (adapter) {
       var db = new PouchDB(dbs.name, { auto_compaction: true});
       return db.info().then(function (info) {
         // http doesn't support auto compaction
-        info.auto_compaction.should.equal(db.type() !== 'http');
+        info.auto_compaction.should.equal(adapter !== 'http');
       });
     });
 
     it('db.info should give adapter name (#3567)', function () {
       var db = new PouchDB(dbs.name);
       return db.info().then(function (info) {
-        info.adapter.should.equal(db.type());
+        info.adapter.should.equal(db.adapter);
       });
     });
 
@@ -850,7 +870,7 @@ adapters.forEach(function (adapter) {
       });
     });
 
-    it('putting is override-able', function (done) {
+    it('putting is override-able', function () {
       var db = new PouchDB(dbs.name);
       var called = 0;
       var plugin = {
@@ -874,9 +894,7 @@ adapters.forEach(function (adapter) {
         return db.get('anid');
       }).then(function (doc) {
         doc.foo.should.equal('bar', 'correct doc');
-      }).then(function () {
-        done();
-      }, done);
+      });
     });
 
     it('issue 2779, deleted docs, old revs COUCHDB-292', function (done) {
@@ -895,41 +913,6 @@ adapters.forEach(function (adapter) {
       }, function (err) {
         should.exist(err);
         done();
-      });
-    });
-
-    it('issue 2779, correct behavior for undeleting', function () {
-
-      if (testUtils.isCouchMaster()) {
-        return true;
-      }
-
-      var db = new PouchDB(dbs.name);
-      var rev;
-
-      function checkNumRevisions(num) {
-        return db.get('foo', {
-          open_revs: 'all',
-          revs: true
-        }).then(function (fullDocs) {
-          fullDocs[0].ok._revisions.ids.should.have.length(num);
-        });
-      }
-
-      return db.put({_id: 'foo'}).then(function (resp) {
-        rev = resp.rev;
-        return checkNumRevisions(1);
-      }).then(function () {
-        return db.remove('foo', rev);
-      }).then(function () {
-        return checkNumRevisions(2);
-      }).then(function () {
-        return db.allDocs({keys: ['foo']});
-      }).then(function (res) {
-        rev = res.rows[0].value.rev;
-        return db.put({_id: 'foo', _rev: rev});
-      }).then(function () {
-        return checkNumRevisions(3);
       });
     });
 
@@ -985,16 +968,6 @@ adapters.forEach(function (adapter) {
         should.not.exist(doc.foo);
         Object.keys(doc).sort().should.deep.equal(['_id', '_rev', 'foo']);
       });
-    });
-
-    it('db.type() returns a type', function () {
-      var db = new PouchDB(dbs.name);
-      db.type().should.be.a('string');
-    });
-
-    it('#4788 db.type() is synchronous', function () {
-      new PouchDB(dbs.name).type.should.be.a('function');
-      new PouchDB(dbs.name).type.should.be.a('function');
     });
 
     it('replace PouchDB.destroy() (express-pouchdb#203)', function (done) {
@@ -1060,6 +1033,24 @@ adapters.forEach(function (adapter) {
       });
     });
 
+    it('test info() after db close', function () {
+      var db = new PouchDB(dbs.name);
+      return db.close().then(function () {
+        return db.info().catch(function (err) {
+          err.message.should.equal('database is closed');
+        });
+      });
+    });
+
+    it('test close() after db close', function () {
+      var db = new PouchDB(dbs.name);
+      return db.close().then(function () {
+        return db.close().catch(function (err) {
+          err.message.should.equal('database is closed');
+        });
+      });
+    });
+
     if (adapter === 'local') {
       // TODO: this test fails in the http adapter in Chrome
       it('should allow unicode doc ids', function (done) {
@@ -1105,13 +1096,20 @@ adapters.forEach(function (adapter) {
           });
         });
       });
+
+      it('6053, PouchDB.plugin() resets defaults', function () {
+        var PouchDB1 = PouchDB.defaults({foo: 'bar'});
+        var PouchDB2 = PouchDB1.plugin({foo: function () {}});
+        should.exist(PouchDB2.__defaults);
+        PouchDB1.__defaults.should.deep.equal(PouchDB2.__defaults);
+       });
     }
 
     if (typeof process !== 'undefined' && !process.browser) {
       it('#5471 PouchDB.plugin() should throw error if passed wrong type or empty object', function () {
         (function () {
           PouchDB.plugin('pouchdb-adapter-memory');
-        }).should.throw(Error, 'Invalid plugin: object passed in is empty or not an object');
+        }).should.throw(Error, 'Invalid plugin: got "pouchdb-adapter-memory", expected an object or a function');
       });
     }
   });

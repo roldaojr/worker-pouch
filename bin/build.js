@@ -4,10 +4,31 @@
 
 var browserify = require('browserify');
 var UglifyJS = require("uglify-js");
-var Promise = require('bluebird');
+var Promise = require('lie');
 var fs = require('fs');
-var writeFile = Promise.promisify(fs.writeFile.bind(fs));
-var mkdirp = Promise.promisify(require('mkdirp'));
+var writeFile = function(file, data, options) {
+  return new Promise(function (resolve, reject) {
+    fs.writeFile(file, data, options, function(err) {
+      if (err == null) {
+        resolve();
+      } else {
+        reject(err);
+      }
+    });
+  });
+};
+var mkdirpFn = require('mkdirp');
+var mkdirp = function(dir, opts) {
+  return new Promise(function (resolve, reject) {
+    mkdirpFn(dir, opts, function(err) {
+      if (err == null) {
+        resolve();
+      } else {
+        reject(err);
+      }
+    });
+  });
+};
 var derequire = require('derequire');
 
 function browserifyIt(entry) {
@@ -23,7 +44,6 @@ function browserifyIt(entry) {
     bundle.on('end', function () {
       data = derequire(data);
       data = UglifyJS.minify(data, {
-        fromString: true,
         mangle: true,
         compress: true
       }).code;

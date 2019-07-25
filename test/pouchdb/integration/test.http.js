@@ -4,32 +4,12 @@ describe('test.http.js', function () {
 
   var dbs = {};
 
-  beforeEach(function (done) {
+  beforeEach(function () {
     dbs.name = testUtils.adapterUrl('http', 'test_http');
-    testUtils.cleanup([dbs.name], done);
   });
 
-  after(function (done) {
+  afterEach(function (done) {
     testUtils.cleanup([dbs.name], done);
-  });
-
-  // TODO: Remove `skipSetup` in favor of `skip_setup` in a future release
-  it('Create a pouch without DB setup (skipSetup)', function (done) {
-    var instantDB;
-    testUtils.isCouchDB(function (isCouchDB) {
-      if (!isCouchDB) {
-        return done();
-      }
-      var db = new PouchDB(dbs.name);
-      db.destroy(function () {
-        instantDB = new PouchDB(dbs.name, { skipSetup: true });
-        instantDB.post({ test: 'abc' }, function (err) {
-          should.exist(err);
-          err.name.should.equal('not_found', 'Skipped setup of database');
-          done();
-        });
-      });
-    });
   });
 
   it('Create a pouch without DB setup (skip_setup)', function (done) {
@@ -53,31 +33,29 @@ describe('test.http.js', function () {
   it('Issue 1269 redundant _changes requests', function (done) {
     var docs = [];
     var num = 100;
+    var callCount = 0;
     for (var i = 0; i < num; i++) {
       docs.push({
         _id: 'doc_' + i,
         foo: 'bar_' + i
       });
     }
-    var db = new PouchDB(dbs.name);
+    var db = new PouchDB(dbs.name, {
+      fetch: function (url, opts) {
+        if (/_changes/.test(url)) {
+          callCount++;
+        }
+        return PouchDB.fetch(url, opts);
+      }
+    });
     db.bulkDocs({ docs: docs }, function () {
       db.info(function (err, info) {
         var update_seq = info.update_seq;
-
-        var callCount = 0;
-        var ajax = db._ajax;
-        db._ajax = function (opts) {
-          if (/_changes/.test(opts.url)) {
-            callCount++;
-          }
-          ajax.apply(this, arguments);
-        };
         db.changes({
           since: update_seq
         }).on('change', function () {
         }).on('complete', function () {
           callCount.should.equal(1, 'One _changes call to complete changes');
-          db._ajax = ajax;
           done();
         }).on('error', done);
       });
@@ -99,54 +77,13 @@ describe('test.http.js', function () {
   });
 
   it('Properly escape url params #4008', function () {
-    var db = new PouchDB(dbs.name);
-    var ajax = db._ajax;
-    db._ajax = function (opts) {
-      opts.url.should.not.contain('[');
-      ajax.apply(this, arguments);
-    };
-    return db.changes({doc_ids: ['1']}).then(function () {
-      db._ajax = ajax;
-    });
-  });
-
-  it('Allows the "ajax timeout" to extend "changes timeout"', function (done) {
-    var timeout = 120000;
     var db = new PouchDB(dbs.name, {
-      skipSetup: true,
-      ajax: {
-        timeout: timeout
+      fetch: function (url, opts) {
+        url.should.not.contain('[');
+        return PouchDB.fetch(url, opts);
       }
     });
-
-    var ajax = db._ajax;
-    var ajaxOpts;
-    db._ajax = function (opts) {
-      if (/changes/.test(opts.url)) {
-        ajaxOpts = opts;
-        changes.cancel();
-      }
-      ajax.apply(this, arguments);
-    };
-
-    var changes = db.changes();
-
-    changes.on('complete', function () {
-      should.exist(ajaxOpts);
-      ajaxOpts.timeout.should.equal(timeout);
-      db._ajax = ajax;
-      done();
-    });
-
-  });
-
-  it('Test custom header', function () {
-    var db = new PouchDB(dbs.name, {
-      headers: {
-        'X-Custom': 'some-custom-header'
-      }
-    });
-    return db.info();
+    return db.changes({doc_ids: ['1']});
   });
 
   it('test url too long error for allDocs()', function () {
@@ -185,11 +122,56 @@ describe('test.http.js', function () {
     });
   });
 
+  it('changes respects seq_interval', function (done) {
+    var docs = [
+      {_id: '0', integer: 0, string: '0'},
+      {_id: '1', integer: 1, string: '1'},
+      {_id: '2', integer: 2, string: '2'}
+    ];
 
-  it('5574 Create a pouch with / in name and prefix url', function () {
-    var db = new PouchDB('test/suffix', {
-      prefix: testUtils.adapterUrl('http', '')
+    var db = new PouchDB(dbs.name);
+    var changesCount = 0;
+    db.bulkDocs(docs).then(function () {
+      db.changes({ seq_interval: 4, return_docs: true })
+      .on('change', function () {
+        changesCount++;
+      }).on('error', function (err) {
+        done(err);
+      }).on('complete', function (info) {
+        try {
+          changesCount.should.equal(3);
+
+          // we can't know in advance which
+          // order the changes arrive in so sort them
+          // so that nulls appear last
+          info.results.sort(function (a, b) {
+            if (a.seq !== null && b.seq === null) {
+              return -1;
+            }
+
+            if (a.seq === null && b.seq !== null) {
+              return 1;
+            }
+
+            return 0;
+          });
+
+          // first change always contains a seq
+          should.not.equal(info.results[0].seq, null);
+          should.not.equal(info.last_seq, null);
+          done();
+        }
+        catch (e) {
+          done(e);
+        }
+      });
     });
+  });
+
+  it('5814 Ensure prefix has trailing /', function () {
+    var index = testUtils.adapterUrl('http', '').lastIndexOf('/');
+    var prefix = testUtils.adapterUrl('http', '').substr(0, index);
+    var db = new PouchDB('test', {prefix: prefix});
     return db.info().then(function () {
       return db.destroy();
     });

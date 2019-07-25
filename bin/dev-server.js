@@ -3,12 +3,12 @@
 'use strict';
 
 var COUCH_HOST = process.env.COUCH_HOST || 'http://127.0.0.1:5984';
-var HTTP_PORT = 8000;
+var HTTP_PORT = 8001;
 var CORS_PORT = 2020;
 
 var cors_proxy = require('corsproxy');
 var watch = require('watch-glob');
-var Promise = require('bluebird');
+var Promise = require('lie');
 var http_proxy = require('pouchdb-http-proxy');
 var http_server = require("http-server");
 var debounce = require('lodash.debounce');

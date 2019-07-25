@@ -16,16 +16,14 @@ adapters.forEach(function (adapters) {
 
     var dbs = {};
 
-    beforeEach(function (done) {
+    beforeEach(function () {
       dbs.name = testUtils.adapterUrl(adapters[0], 'testdb');
       dbs.remote = testUtils.adapterUrl(adapters[1], 'test_repl_remote');
-      testUtils.cleanup([dbs.name, dbs.remote], done);
     });
 
-    after(function (done) {
+    afterEach(function (done) {
       testUtils.cleanup([dbs.name, dbs.remote], done);
     });
-
     it('#3179 conflicts synced, non-live replication', function () {
       var local = new PouchDB(dbs.name);
       var remote = new PouchDB(dbs.remote);
@@ -134,7 +132,11 @@ adapters.forEach(function (adapters) {
             var conflictsEqual = JSON.stringify(localDoc._conflicts || []) ===
               JSON.stringify(remoteDoc._conflicts || []);
             if (!revsEqual || !conflictsEqual) {
-              return waitForUptodate();
+              // we can get caught in an infinite loop here when using adapters based
+              // on microtasks, e.g. memdown, so use setTimeout() to get a macrotask
+              return new testUtils.Promise(function (resolve) {
+                setTimeout(resolve, 0);
+              }).then(waitForUptodate);
             }
           });
         });
@@ -252,7 +254,11 @@ adapters.forEach(function (adapters) {
             var conflictsEqual = JSON.stringify(localDoc._conflicts || []) ===
               JSON.stringify(remoteDoc._conflicts || []);
             if (!revsEqual || !conflictsEqual) {
-              return waitForUptodate();
+              // we can get caught in an infinite loop here when using adapters based
+              // on microtasks, e.g. memdown, so use setTimeout() to get a macrotask
+              return new testUtils.Promise(function (resolve) {
+                setTimeout(resolve, 0);
+              }).then(waitForUptodate);
             }
           });
         });

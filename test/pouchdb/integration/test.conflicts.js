@@ -7,15 +7,13 @@ adapters.forEach(function (adapter) {
 
     var dbs = {};
 
-    beforeEach(function (done) {
+    beforeEach(function () {
       dbs.name = testUtils.adapterUrl(adapter, 'testdb');
-      testUtils.cleanup([dbs.name], done);
     });
 
-    after(function (done) {
+    afterEach(function (done) {
       testUtils.cleanup([dbs.name], done);
     });
-
 
     it('Testing conflicts', function (done) {
       var db = new PouchDB(dbs.name);
@@ -33,7 +31,7 @@ adapters.forEach(function (adapter) {
             should.exist(res.ok, 'Put second doc');
             db.put(doc2, function (err) {
               err.name.should.equal('conflict', 'Put got a conflicts');
-              db.changes().on('complete', function (results) {
+              db.changes({return_docs: true}).on('complete', function (results) {
                 results.results.should.have.length(1);
                 doc2._rev = undefined;
                 db.put(doc2, function (err) {
@@ -65,54 +63,71 @@ adapters.forEach(function (adapter) {
       });
     });
 
-    it('#2882/#2883 last_seq for empty db', function () {
-      // CouchDB 2.0 sequence numbers are not
-      // incremental so skip this test
-      if (testUtils.isCouchMaster()) {
-        return true;
-      }
-
+    it('force put ok on 1st level', function () {
       var db = new PouchDB(dbs.name);
-      return db.changes().then(function (changes) {
-        changes.last_seq.should.equal(0);
-        changes.results.should.have.length(0);
-        return db.info();
-      }).then(function (info) {
-        info.update_seq.should.equal(0);
+      var docId = "docId";
+      var rev1, rev2, rev3, rev2_;
+      // given
+      return db.put({_id: docId, update:1}).then(function (result) {
+        rev1 = result.rev;
+        return db.put({_id: docId, update:2.1, _rev: rev1});
+      }).then(function (result) {
+        rev2 = result.rev;
+        return db.put({_id: docId, update:3, _rev:rev2});
+      })
+      // when
+      .then(function (result) {
+        rev3 = result.rev;
+        return db.put({_id: docId, update:2.2, _rev: rev1}, {force: true});
+      })
+      // then
+      .then(function (result) {
+        rev2_ = result.rev;
+        rev2_.should.not.equal(rev3);
+        rev2_.substring(0, 2).should.equal('2-');
+        should.exist(result.ok, 'update based on nonleaf revision');
+
+        return db.get(docId, {conflicts: true, revs: true});
+      }).then(function (doc) {
+        doc._rev.should.equal(rev3);
+        doc._conflicts.should.eql([rev2_]);
+
+        return db.get(docId, {conflicts: true, revs: true, rev: rev2_});
       });
     });
 
-    it('#2882/#2883 last_seq when putting parent before leaf', function () {
-      // CouchDB 2.0 sequence numbers are not
-      // incremental so skip this test
-      if (testUtils.isCouchMaster()) {
-        return true;
-      }
-
+    it('force put ok on 2nd level', function () {
       var db = new PouchDB(dbs.name);
-      var lastSeq;
-      return db.bulkDocs({
-        docs: [
-          {
-            _id: 'fubar',
-            _rev: '2-a2',
-            _revisions: { start: 2, ids: [ 'a2', 'a1' ] }
-          }, {
-            _id: 'fubar',
-            _rev: '1-a1',
-            _revisions: { start: 1, ids: [ 'a1' ] }
-          }
-        ],
-        new_edits: false
-      }).then(function () {
-        return db.changes();
-      }).then(function (changes) {
-        lastSeq = changes.last_seq;
-        changes.results[0].changes[0].rev.should.equal('2-a2');
-        changes.results[0].seq.should.equal(lastSeq);
-        return db.info();
-      }).then(function (info) {
-        info.update_seq.should.equal(lastSeq);
+      var docId = "docId";
+      var rev2, rev3, rev4, rev3_;
+      // given
+      return db.put({_id: docId, update: 1}).then(function (result) {
+        return db.put({_id: docId, update: 2, _rev: result.rev});
+      }).then(function (result) {
+        rev2 = result.rev;
+        return db.put({_id: docId, update: 3.1, _rev: rev2});
+      }).then(function (result) {
+        rev3 = result.rev;
+        return db.put({_id: docId, update: 4, _rev: rev3});
+      })
+      // when
+      .then(function (result) {
+        rev4 = result.rev;
+        return db.put({_id: docId, update:3.2, _rev: rev2}, {force: true});
+      })
+      // then
+      .then(function (result) {
+        rev3_ = result.rev;
+        rev3_.should.not.equal(rev4);
+        rev3_.substring(0, 2).should.equal('3-');
+        should.exist(result.ok, 'update based on nonleaf revision');
+
+        return db.get(docId, {conflicts: true, revs: true});
+      }).then(function (doc) {
+        doc._rev.should.equal(rev4);
+        doc._conflicts.should.eql([rev3_]);
+
+        return db.get(docId, {conflicts: true, revs: true, rev: rev3_});
       });
     });
 
@@ -512,21 +527,34 @@ adapters.forEach(function (adapter) {
       return chain;
     });
 
-    it('local conflicts', function (done) {
-      if (testUtils.isCouchMaster()) {
-        return done();
-      }
+    it('5832 - update losing leaf returns correct rev', function () {
+      // given
+      var docs = [
+        {
+          _id: 'fubar',
+          _rev: '1-a1',
+          _revisions: { start: 1, ids: [ 'a1' ] }
+        }, {
+          _id: 'fubar',
+          _rev: '2-a2',
+          _revisions: { start: 2, ids: [ 'a2', 'a1' ] }
+        }, {
+          _id: 'fubar',
+          _rev: '2-b2',
+          _revisions: { start: 2, ids: [ 'b2', 'a1' ] }
+        }
+      ];
       var db = new PouchDB(dbs.name);
-      return db.put({foo: 'bar'}, '_local/baz').then(function (result) {
-        return db.put({foo: 'bar'}, '_local/baz', result.res);
+      return db.bulkDocs({
+        docs: docs, new_edits: false
       }).then(function () {
-        return db.put({foo: 'bar'}, '_local/baz');
-      }, function (e) {
-        should.not.exist(e, 'shouldn\'t error yet');
-        done(e);
-      }).then(undefined, function (e) {
-        should.exist(e, 'error when you have a conflict');
-        done();
+        return db.get('fubar', { conflicts: true });
+      })
+      .then(function (doc) {
+        return db.remove(doc);
+      })
+      .then(function (result) {
+        result.rev[0].should.equal('3');
       });
     });
 

@@ -4,7 +4,6 @@
 
 var browserify = require('browserify');
 var UglifyJS = require("uglify-js");
-var Promise = require('lie');
 var fs = require('fs');
 var writeFile = function(file, data, options) {
   return new Promise(function (resolve, reject) {

@@ -2,7 +2,7 @@
   "name": "worker-pouch",
   "version": "2.1.0",
   "description": "PouchDB over a web worker",
-  "main": "lib/index.js",
+  "main": "dist/pouchdb.worker-pouch.js",
   "repository": {
     "type": "git",
     "url": "git://github.com/nolanlawson/worker-pouch.git"
@@ -26,9 +26,9 @@
     "test-browser": "./bin/test-browser.js",
     "jshint": "jshint -c .jshintrc lib test/test.js",
     "test": "npm run jshint && npm run test-browser",
-    "build": "mkdirp dist && run-scripts build-workerified-code browserify min",
-    "browserify": "browserify -s workerPouch -p bundle-collapser/plugin . | ./bin/es3ify.js | derequire > dist/pouchdb.worker-pouch.js",
-    "min": "UGLIFY=1 browserify -s workerPouch -p bundle-collapser/plugin . | ./bin/es3ify.js | derequire | uglifyjs -mc > dist/pouchdb.worker-pouch.min.js",
+    "build": "mkdirp dist && npm run build-workerified-code && npm run browserify && npm run min",
+    "browserify": "browserify -s workerPouch -p bundle-collapser/plugin lib/client/index.js | ./bin/es3ify.js | derequire > dist/pouchdb.worker-pouch.js",
+    "min": "UGLIFY=1 browserify -s workerPouch -p bundle-collapser/plugin lib/client/index.js | ./bin/es3ify.js | derequire | uglifyjs -mc > dist/pouchdb.worker-pouch.min.js",
     "dev": "npm run build-workerified-code && browserify test/test.js > test/test-bundle.js && npm run dev-server",
     "dev-server": "./bin/dev-server.js",
     "build-custom-worker": "browserify test/custom-api/worker.js --debug > test/custom-api/worker-bundle.js",
@@ -41,13 +41,9 @@
     "debug": "~3.1.0",
     "inherits": "~2.0.4",
     "js-extend": "~1.0.1",
-    "lie": "^3.3.0",
-    "pouchdb-adapter-http": "~7.0.0",
-    "pouchdb-adapter-idb": "~7.0.0",
-    "pouchdb-binary-utils": "~7.0.0",
-    "pouchdb-core": "~7.0.0",
-    "pouchdb-mapreduce": "~7.0.0",
-    "pouchdb-replication": "~7.0.0"
+    "pouchdb-adapter-indexeddb": "^7.2.2",
+    "pouchdb-binary-utils": "^7.2.2",
+    "pouchdb-core": "^7.2.2"
   },
   "devDependencies": {
     "browserify": "^16.3.0",

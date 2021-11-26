@@ -1,3 +1,13 @@
+> **_Update note:_** _The update port this project to the support of PouchDB@7.2.2 for internal usage, this is not an official support of future deployment but feel free to use it._
+>
+> **_Differences:_**
+> - _Dropped lie for support of Promise (no Promise in 2021??? look at polyfills)_
+> - _Dropped the use of http adapter, map reduce and replication plugins (not needed in my case) you can edit lib/worker/pouchdb-idb_only.js to include your needed plugins_
+> - _In my case I did only try in browser env so you may need to update thing for node (probably not)_
+> - _Added the support of multiple workers `PouchDB.plugin(require('worker-pouch')(dbName => workerKey))` you can still use a unique worker `PouchDB.plugin(require('worker-pouch'))`_
+> 
+> **_Benefit:_** _The benefit is clearly visible, at the cost the writing is a bit longer (clearly not such probably some ms) the UI do not freeze in comparison with using PouchDB in the main thread that cost randomly 5s to 10s of complete freeze (and even some time the browser warning to close the tab). But note this is only happening when you start writing like 5k+ rows by replication_
+
 worker-pouch [![Build Status](https://travis-ci.org/pouchdb-community/worker-pouch.svg)](https://travis-ci.org/pouchdb-community/worker-pouch)
 =====
 

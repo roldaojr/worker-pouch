@@ -21,7 +21,7 @@
     "url": "https://github.com/nolanlawson/worker-pouch/issues"
   },
   "scripts": {
-    "prepublish": "npm run build",
+    "_prepublish": "npm run build",
     "build-workerified-code": "node bin/build.js",
     "test-browser": "./bin/test-browser.js",
     "jshint": "jshint -c .jshintrc lib test/test.js",

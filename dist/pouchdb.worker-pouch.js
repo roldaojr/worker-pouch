@@ -715,7 +715,6 @@ module.exports.isSupportedBrowser = isSupportedBrowser
 
 module.exports = function isSupportedBrowser () {
   return Promise.resolve().then(() => {
-    let self = {}
     // synchronously throws in IE/Edge
     const workerCode = 'self.onmessage = ' + (
       function () {
